@@ -1,0 +1,22 @@
+[project]
+name = "dreamerv3-torch"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "crafter==1.8.0",
+    "dm-control==1.0.9",
+    "einops==0.3.0",
+    "gym==0.22.0",
+    "matplotlib==3.5.0",
+    "memory-maze==1.0.3",
+    "moviepy==1.0.3",
+    "mujoco==2.3.5",
+    "numpy==1.23.5",
+    "opencv-python==4.7.0.72",
+    "protobuf==3.20.0",
+    "ruamel-yaml==0.17.4",
+    "tensorboard==2.17.1",
+    "torch==2.4.1",
+]

@@ -1,0 +1,41 @@
+# macOS users: build a Linux container with OSMesa headless GL.
+# Uses uv for dependency installation.
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+# Headless GL for dm_control / mujoco
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    ca-certificates \
+    ffmpeg \
+    xvfb \
+    libosmesa6-dev \
+    libgl1 \
+    libgl1-mesa-dev \
+    libglfw3 \
+    libglfw3-dev \
+    libglew-dev \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv (https://github.com/astral-sh/uv)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+WORKDIR /workspace
+COPY . /workspace
+
+# Install Python deps with uv (requirements.txt based)
+RUN uv pip install --system --upgrade pip \
+    && uv pip install --system -r requirements.txt
+
+# Default to OSMesa headless
+ENV MUJOCO_GL=osmesa
+ENV DISPLAY=:0
+
+# Optional: create logdir to avoid permission issues
+RUN mkdir -p /workspace/logdir
+
+CMD ["bash"]
