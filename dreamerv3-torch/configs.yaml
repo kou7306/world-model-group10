@@ -11,7 +11,10 @@ defaults:
   parallel: False
   eval_every: 1e4
   eval_episode_num: 10
+  eval_envs: null
   log_every: 1e4
+  unity_debug_obs: false
+  unity_debug_reward: false
   reset_every: 0
   device: 'cpu'
   compile: True
@@ -208,3 +211,25 @@ audio_vision_toy:
   size: [64, 64]
   audio_dim: 16
   audio_noise_std: 0.0
+
+unity:
+  task: 'unity_default'
+  device: 'cuda'
+  logdir: './logs_unity'
+  steps: 1e6
+  action_repeat: 1
+  envs: 1
+  time_scale: 1
+  eval_envs: 1
+  eval_every: 1e4
+  eval_episode_num: 10
+  train_ratio: 512
+  prefill: 2500
+  video_pred_log: false
+  audio_dim: 8
+  audio_noise_std: 0.0
+  time_limit: 1000
+  unity_debug_obs: false
+  unity_debug_reward: true
+  encoder: {mlp_keys: 'lidar|target', cnn_keys: '$^', audio_keys: 'audio', audio_layers: 3, audio_units: 256, act: 'SiLU', norm: True, mlp_layers: 5, mlp_units: 1024, symlog_inputs: True}
+  decoder: {mlp_keys: 'lidar|target', cnn_keys: '$^', audio_keys: 'audio', audio_layers: 3, audio_units: 256, act: 'SiLU', norm: True, mlp_layers: 5, mlp_units: 1024, vector_dist: symlog_mse, outscale: 1.0}

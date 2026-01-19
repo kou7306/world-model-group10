@@ -214,12 +214,24 @@ def make_env(config, mode, id):
 
         env = minecraft.make_env(task, size=config.size, break_speed=config.break_speed)
         env = wrappers.OneHotAction(env)
+    elif suite == "unity":
+        from envs.unity import UnityEnv
+
+        env = UnityEnv(
+            action_repeat=config.action_repeat,
+            seed=config.seed + id,
+            id=id,
+            debug_obs=getattr(config, "unity_debug_obs", False),
+            debug_reward=getattr(config, "unity_debug_reward", False),
+        )
+        env = wrappers.NormalizeActions(env)
     else:
         raise NotImplementedError(suite)
     env = wrappers.TimeLimit(env, config.time_limit)
     env = wrappers.SelectAction(env, key="action")
     env = wrappers.UUID(env)
-    if config.audio_dim and config.audio_dim > 0:
+    if config.audio_dim and config.audio_dim > 0 and suite != "unity":
+        # Unity環境は既に音の観測を含んでいるため、AddAudioObsは適用しない
         env = wrappers.AddAudioObs(
             env, dim=config.audio_dim, noise_std=config.audio_noise_std
         )
@@ -261,7 +273,8 @@ def main(config):
     eval_eps = tools.load_episodes(directory, limit=1)
     make = lambda mode, id: make_env(config, mode, id)
     train_envs = [make("train", i) for i in range(config.envs)]
-    eval_envs = [make("eval", i) for i in range(config.envs)]
+    num_eval_envs = config.eval_envs if (getattr(config, "eval_envs", None) is not None and config.eval_envs > 0) else config.envs
+    eval_envs = [make("eval", i) for i in range(num_eval_envs)]
     if config.parallel:
         train_envs = [Parallel(env, "process") for env in train_envs]
         eval_envs = [Parallel(env, "process") for env in eval_envs]
