@@ -11,7 +11,10 @@ defaults:
   parallel: False
   eval_every: 1e4
   eval_episode_num: 10
+  eval_envs: null
   log_every: 1e4
+  unity_debug_obs: false
+  unity_debug_reward: false
   reset_every: 0
   device: 'cpu'
   compile: True
@@ -208,3 +211,27 @@ audio_vision_toy:
   size: [64, 64]
   audio_dim: 16
   audio_noise_std: 0.0
+
+unity:
+  task: 'unity_default'
+  device: 'cuda'
+  logdir: './logdir/unitymultiple'
+  steps: 1e7
+  envs: 10
+  eval_envs: 0
+  eval_every: 1e4
+  eval_episode_num: 0
+  train_ratio: 512
+  prefill: 2500
+  video_pred_log: false
+  audio_dim: 8
+  audio_noise_std: 0.0
+  use_audio: true  # 音情報を使う場合はtrue、使わない場合はfalse
+  time_limit: 1000
+  unity_debug_obs: true
+  action_repeat: 1
+  time_scale: 20.0
+  unity_debug_reward: true
+  # use_audio=trueの場合: audio_keys: 'audio', use_audio=falseの場合: audio_keys: '$^'
+  encoder: {mlp_keys: 'lidar_front|lidar_back|target', cnn_keys: '$^', audio_keys: 'audio', audio_layers: 3, audio_units: 256, act: 'SiLU', norm: True, mlp_layers: 5, mlp_units: 1024, symlog_inputs: True}
+  decoder: {mlp_keys: 'lidar_front|lidar_back|target', cnn_keys: '$^', audio_keys: 'audio', audio_layers: 3, audio_units: 256, act: 'SiLU', norm: True, mlp_layers: 5, mlp_units: 1024, vector_dist: symlog_mse, outscale: 1.0}

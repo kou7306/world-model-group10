@@ -3,6 +3,7 @@ run*
 logdir*
 vis_*
 result*
+UnityBuild*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
