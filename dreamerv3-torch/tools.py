@@ -145,8 +145,10 @@ def simulate(
         obs = [None] * len(envs)
         agent_state = None
         reward = [0] * len(envs)
+        train_successes = []  # 訓練時の成功フラグを保持
     else:
-        step, episode, done, length, obs, agent_state, reward = state
+        step, episode, done, length, obs, agent_state, reward = state[:7]
+        train_successes = state[7] if len(state) > 7 else []
     while (steps and step < steps) or (episodes and episode < episodes):
         # reset envs if necessary
         if done.any():
@@ -217,6 +219,17 @@ def simulate(
 
                 if not is_eval:
                     step_in_dataset = erase_over_episodes(cache, limit)
+                    is_success = 1.0 if score >= 10.0 else 0.0
+                    train_successes.append(is_success)
+                    # 直近100エピソードの成功率を計算（メモリ効率のため最大100エピソード保持）
+                    max_window = 100
+                    if len(train_successes) > max_window:
+                        train_successes = train_successes[-max_window:]
+                    # 10エピソードごとに成功率を記録（最後のエピソードでも記録）
+                    should_log_success = len(train_successes) % 10 == 0 or len(train_successes) == 1
+                    if should_log_success:
+                        train_success_rate = sum(train_successes) / len(train_successes) if train_successes else 0.0
+                        logger.scalar(f"train_success_rate", train_success_rate)
                     logger.scalar(f"dataset_size", step_in_dataset)
                     logger.scalar(f"train_return", score)
                     logger.scalar(f"train_length", length)
@@ -226,13 +239,16 @@ def simulate(
                     if not "eval_lengths" in locals():
                         eval_lengths = []
                         eval_scores = []
+                        eval_successes = []
                         eval_done = False
-                    # start counting scores for evaluation
+                    is_success = 1.0 if score >= 10.0 else 0.0
                     eval_scores.append(score)
                     eval_lengths.append(length)
+                    eval_successes.append(is_success)
 
                     score = sum(eval_scores) / len(eval_scores)
                     length = sum(eval_lengths) / len(eval_lengths)
+                    success_rate = sum(eval_successes) / len(eval_successes) if eval_successes else 0.0
                     if video is not None:
                         logger.video(f"eval_policy", np.array(video)[None])
 
@@ -240,6 +256,7 @@ def simulate(
                         logger.scalar(f"eval_return", score)
                         logger.scalar(f"eval_length", length)
                         logger.scalar(f"eval_episodes", len(eval_scores))
+                        logger.scalar(f"eval_success_rate", success_rate)
                         logger.write(step=logger.step)
                         eval_done = True
     if is_eval:
@@ -247,7 +264,8 @@ def simulate(
         while len(cache) > 1:
             # FIFO
             cache.popitem(last=False)
-    return (step - steps, episode - episodes, done, length, obs, agent_state, reward)
+    train_successes = locals().get("train_successes", [])
+    return (step - steps, episode - episodes, done, length, obs, agent_state, reward, train_successes)
 
 
 def add_to_cache(cache, id, transition):

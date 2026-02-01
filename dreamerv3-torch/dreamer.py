@@ -223,6 +223,7 @@ def make_env(config, mode, id):
             id=id,
             debug_obs=getattr(config, "unity_debug_obs", False),
             debug_reward=getattr(config, "unity_debug_reward", False),
+            use_audio=getattr(config, "use_audio", True),
         )
         env = wrappers.NormalizeActions(env)
     else:
@@ -273,7 +274,8 @@ def main(config):
     eval_eps = tools.load_episodes(directory, limit=1)
     make = lambda mode, id: make_env(config, mode, id)
     train_envs = [make("train", i) for i in range(config.envs)]
-    num_eval_envs = config.eval_envs if (getattr(config, "eval_envs", None) is not None and config.eval_envs > 0) else config.envs
+    # eval_envsが明示的に設定されている場合はその値を使う（0でもOK）、Noneの場合はenvsにフォールバック
+    num_eval_envs = config.eval_envs if getattr(config, "eval_envs", None) is not None else config.envs
     eval_envs = [make("eval", i) for i in range(num_eval_envs)]
     if config.parallel:
         train_envs = [Parallel(env, "process") for env in train_envs]

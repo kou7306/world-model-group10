@@ -16,20 +16,22 @@ def get_available_port(start_port=5005, end_port=5100):
                 return port
 
 
-LIDAR_SIZE = 7   # RayPerceptionSensor: RaysPerDirection=3, MaxRayDegrees=180
-AUDIO_SIZE = 8   # 方向別音量分布 directionCount=8, 各0.0～1.0
-TARGET_SIZE = 3  # ターゲット相対位置 (x,y,z)
-VECTOR_OBS_SIZE = LIDAR_SIZE + AUDIO_SIZE + TARGET_SIZE  # 18
+LIDAR_FRONT_SIZE = 20  # 前方LiDAR: 20個
+LIDAR_BACK_SIZE = 20   # 後方LiDAR: 20個
+AUDIO_SIZE = 8         # 方向別音量分布 directionCount=8, 各0.0～1.0
+TARGET_SIZE = 3        # ターゲット相対位置 (x,y,z)
+VECTOR_OBS_SIZE = LIDAR_FRONT_SIZE + LIDAR_BACK_SIZE + AUDIO_SIZE + TARGET_SIZE  # 51
 
-# 観測の並び: Audio [0:8] → Target [8:11] → LiDAR [11:18]
-OBS_ORDER = "Audio → Target → LiDAR"
-AUDIO_START, AUDIO_END = 0, AUDIO_SIZE
+# 観測の並び: 前方LiDAR [0:20] → 後方LiDAR [20:40] → Audio [40:48] → Target [48:51]
+OBS_ORDER = "LiDAR_Front → LiDAR_Back → Audio → Target"
+LIDAR_FRONT_START, LIDAR_FRONT_END = 0, LIDAR_FRONT_SIZE
+LIDAR_BACK_START, LIDAR_BACK_END = LIDAR_FRONT_END, LIDAR_FRONT_END + LIDAR_BACK_SIZE
+AUDIO_START, AUDIO_END = LIDAR_BACK_END, LIDAR_BACK_END + AUDIO_SIZE
 TARGET_START, TARGET_END = AUDIO_END, AUDIO_END + TARGET_SIZE
-LIDAR_START, LIDAR_END = TARGET_END, TARGET_END + LIDAR_SIZE
 
 
 class UnityEnv:
-    def __init__(self, action_repeat=1, seed=None, retries=3, time_scale=20.0, id=0, debug_obs=None, debug_reward=False):
+    def __init__(self, action_repeat=1, seed=None, retries=3, time_scale=20.0, id=0, debug_obs=None, debug_reward=False, use_audio=True):
         self.retries = retries
         self.id = id
         self.timeout_wait = 180
@@ -37,6 +39,7 @@ class UnityEnv:
                           if debug_obs is None else debug_obs)
         self._debug_obs_count = 0
         self._debug_reward = debug_reward
+        self._use_audio = use_audio
         self._init_env(action_repeat, seed, time_scale)
 
     def _init_env(self, action_repeat, seed, time_scale):
@@ -54,12 +57,12 @@ class UnityEnv:
 
                 side_channels = [self.channel, self.stats_channel]
                 if self.id < 10:
-                    self.env = UnityEnvironment(file_name="UnityBuild", base_port=base_port, side_channels=side_channels, timeout_wait=180)
+                    self.env = UnityEnvironment(file_name="UnityBuildMulti", base_port=base_port, side_channels=side_channels, timeout_wait=180)
                 else:
-                    self.env = UnityEnvironment(file_name="UnityBuild", base_port=base_port, side_channels=side_channels, timeout_wait=180)
+                    self.env = UnityEnvironment(file_name="UnityBuildMulti", base_port=base_port, side_channels=side_channels, timeout_wait=180)
                 self.env.reset()
                 print("Environment successfully initialized.")
-                print(f"Obs: {OBS_ORDER} | Audio={AUDIO_SIZE}, Target={TARGET_SIZE}, LiDAR={LIDAR_SIZE} (total={VECTOR_OBS_SIZE})")
+                print(f"Obs: {OBS_ORDER} | LiDAR_Front={LIDAR_FRONT_SIZE}, LiDAR_Back={LIDAR_BACK_SIZE}, Audio={AUDIO_SIZE}, Target={TARGET_SIZE} (total={VECTOR_OBS_SIZE})")
                 if self._debug_obs:
                     print("[UnityObs] UNITY_DEBUG_OBS=1: 観測のダンプを有効にしました")
 
@@ -79,11 +82,14 @@ class UnityEnv:
 
     @property
     def observation_space(self):
-        return spaces.Dict({
-            "lidar": spaces.Box(low=-np.inf, high=np.inf, shape=(LIDAR_SIZE,), dtype=np.float32),
-            "audio": spaces.Box(low=0.0, high=1.0, shape=(AUDIO_SIZE,), dtype=np.float32),
+        obs_space = {
+            "lidar_front": spaces.Box(low=-np.inf, high=np.inf, shape=(LIDAR_FRONT_SIZE,), dtype=np.float32),
+            "lidar_back": spaces.Box(low=-np.inf, high=np.inf, shape=(LIDAR_BACK_SIZE,), dtype=np.float32),
             "target": spaces.Box(low=-np.inf, high=np.inf, shape=(TARGET_SIZE,), dtype=np.float32),
-        })
+        }
+        if self._use_audio:
+            obs_space["audio"] = spaces.Box(low=0.0, high=1.0, shape=(AUDIO_SIZE,), dtype=np.float32)
+        return spaces.Dict(obs_space)
 
     @property
     def action_space(self):
@@ -164,7 +170,15 @@ class UnityEnv:
         vector_obs = np.array(vector_obs, dtype=np.float32).flatten()
         n = len(vector_obs)
 
-        # 並び: Audio [0:8] → Target [8:11] → LiDAR [11:18]
+        # 並び: 前方LiDAR [0:20] → 後方LiDAR [20:40] → Audio [40:48] → Target [48:51]
+        lidar_front = np.zeros(LIDAR_FRONT_SIZE, dtype=np.float32)
+        if n > LIDAR_FRONT_START:
+            lidar_front[: min(LIDAR_FRONT_SIZE, n - LIDAR_FRONT_START)] = vector_obs[LIDAR_FRONT_START : min(LIDAR_FRONT_END, n)]
+
+        lidar_back = np.zeros(LIDAR_BACK_SIZE, dtype=np.float32)
+        if n > LIDAR_BACK_START:
+            lidar_back[: min(LIDAR_BACK_SIZE, n - LIDAR_BACK_START)] = vector_obs[LIDAR_BACK_START : min(LIDAR_BACK_END, n)]
+
         audio = np.zeros(AUDIO_SIZE, dtype=np.float32)
         if n > AUDIO_START:
             audio[: min(AUDIO_SIZE, n - AUDIO_START)] = vector_obs[AUDIO_START : min(AUDIO_END, n)]
@@ -174,26 +188,22 @@ class UnityEnv:
         if n > TARGET_START:
             target[: min(TARGET_SIZE, n - TARGET_START)] = vector_obs[TARGET_START : min(TARGET_END, n)]
 
-        lidar = np.zeros(LIDAR_SIZE, dtype=np.float32)
-        if n > LIDAR_START:
-            lidar[: min(LIDAR_SIZE, n - LIDAR_START)] = vector_obs[LIDAR_START : min(LIDAR_END, n)]
-
-        if self._debug_obs and self._debug_obs_count < 2:
+        if self._debug_obs:
             self._debug_obs_count += 1
-            label = "reset" if self._debug_obs_count == 1 else "step"
-            print(f"[UnityObs] [{label}] raw_len={n} 並び={OBS_ORDER}")
-            print(f"  raw[0:{n}] = {vector_obs.tolist()}")
-            print(f"  → audio[0:8]  = {audio.tolist()}  (0〜1想定)")
-            print(f"  → target[8:11]= {target.tolist()} (x,y,z)")
-            print(f"  → lidar[11:18]= {lidar.tolist()}  (距離・ヒット等)")
+            if self._use_audio:
+                print(f"[Obs] id={self.id} step={self._debug_obs_count} lidar_f={lidar_front.tolist()[:5]}... lidar_b={lidar_back.tolist()[:5]}... audio={audio.tolist()} target={target.tolist()}")
+            else:
+                print(f"[Obs] id={self.id} step={self._debug_obs_count} lidar_f={lidar_front.tolist()[:5]}... lidar_b={lidar_back.tolist()[:5]}... target={target.tolist()}")
 
         obs = {
-            "lidar": lidar,
-            "audio": audio,
+            "lidar_front": lidar_front,
+            "lidar_back": lidar_back,
             "target": target,
             "is_first": False,
             "is_terminal": is_terminate,
         }
+        if self._use_audio:
+            obs["audio"] = audio
         return obs
 
 
