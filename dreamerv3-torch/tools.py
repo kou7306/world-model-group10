@@ -146,9 +146,11 @@ def simulate(
         agent_state = None
         reward = [0] * len(envs)
         train_successes = []  # 訓練時の成功フラグを保持
+        unity_goal_successes = []  # UnityのGoal/Reachedに基づく成功フラグ（ゴール到達率用）
     else:
         step, episode, done, length, obs, agent_state, reward = state[:7]
         train_successes = state[7] if len(state) > 7 else []
+        unity_goal_successes = state[8] if len(state) > 8 else []
     while (steps and step < steps) or (episodes and episode < episodes):
         # reset envs if necessary
         if done.any():
@@ -188,8 +190,11 @@ def simulate(
         step += len(envs)
         length *= 1 - done
         # add to cache
+        done_env_stats = {}  # エピソード終了したenvのStatsRecorder統計
         for a, result, env in zip(action, results, envs):
             o, r, d, info = result
+            if d:
+                done_env_stats[env.id] = info.get("unity_stats", {})
             o = {k: convert(v) for k, v in o.items()}
             transition = o.copy()
             if isinstance(a, dict):
@@ -202,8 +207,41 @@ def simulate(
 
         if done.any():
             indices = [index for index, d in enumerate(done) if d]
+            # 複数envが同時終了した場合のUnity統計を集約（Sum系は合算、それ以外は平均）
+            aggregated_stats = {}
+            for i in indices:
+                for k, v in done_env_stats.get(envs[i].id, {}).items():
+                    if isinstance(v, (int, float)):
+                        if k not in aggregated_stats:
+                            aggregated_stats[k] = []
+                        aggregated_stats[k].append(float(v))
+
+            # UnityのGoal/Reachedに基づくゴール到達率用：各終了エピソードがゴールだったか記録
+            for i in indices:
+                goal_reached = done_env_stats.get(envs[i].id, {}).get("Goal/Reached", 0)
+                unity_goal_successes.append(1.0 if (isinstance(goal_reached, (int, float)) and float(goal_reached) >= 1) else 0.0)
+            if len(unity_goal_successes) > 100:
+                unity_goal_successes = unity_goal_successes[-100:]
+
             # logging for done episode
             for i in indices:
+                # Unity StatsRecorder統計をTensorBoardに記録（ゴール未達時はGoal/Reached=0を記録）
+                goal_vals = aggregated_stats.get("Goal/Reached", [0.0] * len(indices))
+                goal_sum = sum(goal_vals) if goal_vals else 0.0
+                logger.scalar("unity/Goal/Reached", goal_sum)
+                for k, vals in aggregated_stats.items():
+                    if k == "Goal/Reached":
+                        continue
+                    if "Reached" in k or "Count" in k:
+                        logger.scalar(f"unity/{k}", sum(vals))
+                    else:
+                        logger.scalar(f"unity/{k}", sum(vals) / len(vals))
+
+                # Unityベースのゴール到達率（直近100エピソード）
+                unity_goal_reach_rate = sum(unity_goal_successes) / len(unity_goal_successes) if unity_goal_successes else 0.0
+                if len(unity_goal_successes) % 10 == 0 or len(unity_goal_successes) == 1:
+                    logger.scalar("unity/Goal/ReachRate", unity_goal_reach_rate)
+
                 save_episodes(directory, {envs[i].id: cache[envs[i].id]})
                 length = len(cache[envs[i].id]["reward"]) - 1
                 score = float(np.array(cache[envs[i].id]["reward"]).sum())
@@ -265,7 +303,8 @@ def simulate(
             # FIFO
             cache.popitem(last=False)
     train_successes = locals().get("train_successes", [])
-    return (step - steps, episode - episodes, done, length, obs, agent_state, reward, train_successes)
+    unity_goal_successes = locals().get("unity_goal_successes", [])
+    return (step - steps, episode - episodes, done, length, obs, agent_state, reward, train_successes, unity_goal_successes)
 
 
 def add_to_cache(cache, id, transition):

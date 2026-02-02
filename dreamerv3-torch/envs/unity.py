@@ -57,9 +57,9 @@ class UnityEnv:
 
                 side_channels = [self.channel, self.stats_channel]
                 if self.id < 10:
-                    self.env = UnityEnvironment(file_name="UnityBuildMulti", base_port=base_port, side_channels=side_channels, timeout_wait=180)
+                    self.env = UnityEnvironment(file_name="UnityBuildMulti2", base_port=base_port, side_channels=side_channels, timeout_wait=180)
                 else:
-                    self.env = UnityEnvironment(file_name="UnityBuildMulti", base_port=base_port, side_channels=side_channels, timeout_wait=180)
+                    self.env = UnityEnvironment(file_name="UnityBuildMulti2", base_port=base_port, side_channels=side_channels, timeout_wait=180)
                 self.env.reset()
                 print("Environment successfully initialized.")
                 print(f"Obs: {OBS_ORDER} | LiDAR_Front={LIDAR_FRONT_SIZE}, LiDAR_Back={LIDAR_BACK_SIZE}, Audio={AUDIO_SIZE}, Target={TARGET_SIZE} (total={VECTOR_OBS_SIZE})")
